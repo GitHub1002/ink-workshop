@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ink_workshop
+      POSTGRES_USER: ink
+      POSTGRES_PASSWORD: ink
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ink -d ink_workshop"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ink_workshop
+      SPRING_DATASOURCE_USERNAME: ink
+      SPRING_DATASOURCE_PASSWORD: ink
+    ports:
+      - "8080:8080"
