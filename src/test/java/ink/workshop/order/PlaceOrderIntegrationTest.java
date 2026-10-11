@@ -241,6 +241,35 @@ class PlaceOrderIntegrationTest {
         .andExpect(jsonPath("$.code").value("MALFORMED_JSON"));
   }
 
+  @Test
+  void rejectsPasswordThatExceedsTheBcryptByteLimit() throws Exception {
+    String tooLong = "密".repeat(25);
+
+    mockMvc.perform(post("/users")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {"email":"long@example.com","password":"%s","name":"墨客"}
+                """.formatted(tooLong)))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+    String accepted = "a".repeat(72);
+    mockMvc.perform(post("/users")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {"email":"boundary@example.com","password":"%s","name":"墨客"}
+                """.formatted(accepted)))
+        .andExpect(status().isCreated());
+
+    mockMvc.perform(post("/sessions")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {"email":"boundary@example.com","password":"%s"}
+                """.formatted(accepted + "extra")))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+  }
+
   private LoggedIn registerAndLogin(String email) throws Exception {
     MvcResult registered = mockMvc.perform(post("/users")
             .contentType(MediaType.APPLICATION_JSON)

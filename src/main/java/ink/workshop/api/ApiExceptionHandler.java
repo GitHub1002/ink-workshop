@@ -7,6 +7,7 @@ import ink.workshop.order.DuplicateProductException;
 import ink.workshop.order.OrderNotFoundException;
 import ink.workshop.user.EmailAlreadyUsedException;
 import ink.workshop.user.InvalidCredentialsException;
+import ink.workshop.user.PasswordConstraintException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -49,6 +50,11 @@ public class ApiExceptionHandler {
   ResponseEntity<ApiError> emailAlreadyUsed(EmailAlreadyUsedException exception) {
     return ResponseEntity.status(HttpStatus.CONFLICT)
         .body(new ApiError("EMAIL_ALREADY_USED", exception.getMessage()));
+  }
+
+  @ExceptionHandler(PasswordConstraintException.class)
+  ResponseEntity<ApiError> passwordConstraint(PasswordConstraintException exception) {
+    return ResponseEntity.badRequest().body(new ApiError("VALIDATION_ERROR", exception.getMessage()));
   }
 
   @ExceptionHandler(InvalidCredentialsException.class)

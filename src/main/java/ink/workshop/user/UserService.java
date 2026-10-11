@@ -1,5 +1,6 @@
 package ink.workshop.user;
 
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
@@ -16,6 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserService {
 
   private static final Duration SESSION_LIFETIME = Duration.ofDays(7);
+  private static final int MIN_PASSWORD_BYTES = 8;
+  private static final int MAX_PASSWORD_BYTES = 72;
   private static final int TOKEN_BYTES = 32;
 
   private final UserRepository userRepository;
@@ -37,6 +40,7 @@ public class UserService {
 
   @Transactional
   public UserResponse register(RegisterRequest request) {
+    requirePasswordForRegistration(request.password());
     String email = normalizeEmail(request.email());
     if (userRepository.existsByEmail(email)) {
       throw new EmailAlreadyUsedException();
@@ -51,6 +55,9 @@ public class UserService {
 
   @Transactional
   public SessionResponse login(LoginRequest request) {
+    if (!isPasswordLengthAllowed(request.password())) {
+      throw new InvalidCredentialsException();
+    }
     String email = normalizeEmail(request.email());
     User user = userRepository.findByEmail(email).orElseThrow(InvalidCredentialsException::new);
     if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
@@ -71,6 +78,17 @@ public class UserService {
 
   private String normalizeEmail(String email) {
     return email.trim().toLowerCase(Locale.ROOT);
+  }
+
+  private void requirePasswordForRegistration(String password) {
+    if (!isPasswordLengthAllowed(password)) {
+      throw new PasswordConstraintException();
+    }
+  }
+
+  private boolean isPasswordLengthAllowed(String password) {
+    int byteLength = password.getBytes(StandardCharsets.UTF_8).length;
+    return byteLength >= MIN_PASSWORD_BYTES && byteLength <= MAX_PASSWORD_BYTES;
   }
 
   private String newToken() {

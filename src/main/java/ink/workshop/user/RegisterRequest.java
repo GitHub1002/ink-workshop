@@ -10,7 +10,6 @@ public record RegisterRequest(
     @Size(max = 120, message = "邮箱最长 120 个字符")
     String email,
     @NotBlank(message = "必须填写密码")
-    @Size(min = 8, max = 72, message = "密码长度需在 8 到 72 之间")
     String password,
     @NotBlank(message = "必须填写昵称")
     @Size(max = 40, message = "昵称最长 40 个字符")
