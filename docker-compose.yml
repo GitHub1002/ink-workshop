@@ -7,6 +7,8 @@ services:
       POSTGRES_PASSWORD: ink
     ports:
       - "5433:5432"
+    volumes:
+      - ./docker/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ink -d ink_workshop"]
       interval: 5s
@@ -19,9 +21,10 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ink_workshop
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ink_order
       SPRING_DATASOURCE_USERNAME: ink
       SPRING_DATASOURCE_PASSWORD: ink
+      INK_CATALOG_BASE_URL: http://catalog:8082
       INK_INVENTORY_BASE_URL: http://inventory:8081
     ports:
       - "8080:8080"
@@ -34,9 +37,24 @@ services:
         condition: service_healthy
     environment:
       SPRING_CONFIG_NAME: inventory
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ink_workshop
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ink_inventory
       SPRING_DATASOURCE_USERNAME: ink
       SPRING_DATASOURCE_PASSWORD: ink
     ports:
       - "8081:8081"
     entrypoint: ["java", "-Dloader.main=ink.inventory.InventoryApplication", "-cp", "app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]
+
+  catalog:
+    build: .
+    restart: on-failure
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_CONFIG_NAME: catalog
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ink_catalog
+      SPRING_DATASOURCE_USERNAME: ink
+      SPRING_DATASOURCE_PASSWORD: ink
+    ports:
+      - "8082:8082"
+    entrypoint: ["java", "-Dloader.main=ink.catalog.CatalogApplication", "-cp", "app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]
