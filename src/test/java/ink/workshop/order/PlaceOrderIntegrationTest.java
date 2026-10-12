@@ -10,9 +10,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
 
 import com.jayway.jsonpath.JsonPath;
+import ink.catalog.CatalogApplication;
 import ink.inventory.InventoryApplication;
+import ink.workshop.catalog.CatalogClient;
 import ink.workshop.inventory.InventoryClient;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -26,6 +32,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
@@ -52,23 +59,33 @@ class PlaceOrderIntegrationTest {
   @Autowired
   private InventoryClient inventoryClient;
 
+  @Autowired
+  private CatalogClient catalogClient;
+
   private ConfigurableApplicationContext inventory;
+  private ConfigurableApplicationContext catalog;
   private String inventoryBaseUrl;
+  private JdbcTemplate inventoryJdbc;
+  private JdbcTemplate catalogJdbc;
 
   @BeforeAll
-  void startInventory() {
-    inventory = InventoryApplication.start(
-        "--server.port=0",
-        "--spring.datasource.url=" + postgres.getJdbcUrl(),
-        "--spring.datasource.username=" + postgres.getUsername(),
-        "--spring.datasource.password=" + postgres.getPassword());
-    String port = inventory.getEnvironment().getProperty("local.server.port");
-    inventoryBaseUrl = "http://127.0.0.1:" + port;
+  void startOtherServices() throws SQLException {
+    createDatabase("ink_catalog");
+    createDatabase("ink_inventory");
+    catalog = startService(CatalogApplication::start, "ink_catalog");
+    inventory = startService(InventoryApplication::start, "ink_inventory");
+    catalogClient.useBaseUrl(baseUrl(catalog));
+    inventoryBaseUrl = baseUrl(inventory);
     inventoryClient.useBaseUrl(inventoryBaseUrl);
+    catalogJdbc = jdbc(databaseUrl("ink_catalog"));
+    inventoryJdbc = jdbc(databaseUrl("ink_inventory"));
   }
 
   @AfterAll
-  void stopInventory() {
+  void stopOtherServices() {
+    if (catalog != null) {
+      catalog.close();
+    }
     if (inventory != null) {
       inventory.close();
     }
@@ -80,10 +97,10 @@ class PlaceOrderIntegrationTest {
     jdbcTemplate.update("delete from orders");
     jdbcTemplate.update("delete from sessions");
     jdbcTemplate.update("delete from users");
-    jdbcTemplate.update("delete from stock_deductions");
-    jdbcTemplate.update("delete from inventory where product_id > 4");
-    jdbcTemplate.update("delete from products where id > 4");
-    jdbcTemplate.update("update inventory set available = 10");
+    inventoryJdbc.update("delete from stock_deductions");
+    inventoryJdbc.update("delete from inventory where product_id > 4");
+    inventoryJdbc.update("update inventory set available = 10");
+    catalogJdbc.update("delete from products where id > 4");
   }
 
   @Test
@@ -427,9 +444,48 @@ class PlaceOrderIntegrationTest {
   }
 
   private int available(long productId) {
-    Integer available = jdbcTemplate.queryForObject(
+    Integer available = inventoryJdbc.queryForObject(
         "select available from inventory where product_id = ?", Integer.class, productId);
     return available == null ? -1 : available;
+  }
+
+  private void createDatabase(String name) throws SQLException {
+    try (Connection connection = DriverManager.getConnection(
+        postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+        Statement statement = connection.createStatement()) {
+      statement.execute("create database " + name);
+    } catch (SQLException exception) {
+      if (!"42P04".equals(exception.getSQLState())) {
+        throw exception;
+      }
+    }
+  }
+
+  private ConfigurableApplicationContext startService(ServiceStarter starter, String database) {
+    return starter.start(
+        "--server.port=0",
+        "--spring.datasource.url=" + databaseUrl(database),
+        "--spring.datasource.username=" + postgres.getUsername(),
+        "--spring.datasource.password=" + postgres.getPassword());
+  }
+
+  private String databaseUrl(String database) {
+    return postgres.getJdbcUrl().replace("/" + postgres.getDatabaseName(), "/" + database);
+  }
+
+  private static String baseUrl(ConfigurableApplicationContext context) {
+    return "http://127.0.0.1:" + context.getEnvironment().getProperty("local.server.port");
+  }
+
+  private static JdbcTemplate jdbc(String url) {
+    DriverManagerDataSource dataSource = new DriverManagerDataSource(
+        url, postgres.getUsername(), postgres.getPassword());
+    return new JdbcTemplate(dataSource);
+  }
+
+  @FunctionalInterface
+  private interface ServiceStarter {
+    ConfigurableApplicationContext start(String... args);
   }
 
   private record LoggedIn(long userId, String token) {}

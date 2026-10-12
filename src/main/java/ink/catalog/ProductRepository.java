@@ -1,4 +1,4 @@
-package ink.workshop.catalog;
+package ink.catalog;
 
 import java.util.List;
 

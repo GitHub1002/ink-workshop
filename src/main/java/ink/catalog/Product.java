@@ -1,4 +1,4 @@
-package ink.workshop.catalog;
+package ink.catalog;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

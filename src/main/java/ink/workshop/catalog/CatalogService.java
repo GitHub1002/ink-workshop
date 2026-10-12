@@ -6,44 +6,36 @@ import ink.workshop.inventory.InventoryClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class CatalogService {
 
   private static final Logger log = LoggerFactory.getLogger(CatalogService.class);
 
-  private final ProductRepository productRepository;
+  private final CatalogClient catalogClient;
   private final InventoryClient inventoryClient;
 
-  public CatalogService(ProductRepository productRepository, InventoryClient inventoryClient) {
-    this.productRepository = productRepository;
+  public CatalogService(CatalogClient catalogClient, InventoryClient inventoryClient) {
+    this.catalogClient = catalogClient;
     this.inventoryClient = inventoryClient;
   }
 
-  @Transactional(readOnly = true)
   public List<ProductResponse> list() {
-    return productRepository.findAllByOrderByIdAsc().stream()
-        .map(ProductResponse::from)
-        .toList();
+    return catalogClient.list();
   }
 
-  @Transactional(readOnly = true)
   public ProductResponse get(long productId) {
-    return productRepository.findById(productId)
-        .map(ProductResponse::from)
-        .orElseThrow(() -> new ProductNotFoundException(productId));
+    return catalogClient.get(productId);
   }
 
   public ProductResponse create(CreateProductRequest request) {
-    Product saved = productRepository.save(Product.create(
-        request.name().trim(), request.priceCents(), request.description().trim()));
+    ProductResponse saved = catalogClient.create(request);
     try {
-      inventoryClient.initialize(saved.getId());
+      inventoryClient.initialize(saved.id());
     } catch (RuntimeException exception) {
-      log.error("product_saved_without_stock productId={}", saved.getId(), exception);
+      log.error("product_saved_without_stock productId={}", saved.id(), exception);
       throw exception;
     }
-    return ProductResponse.from(saved);
+    return saved;
   }
 }

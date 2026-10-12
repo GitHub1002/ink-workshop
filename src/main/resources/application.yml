@@ -2,7 +2,7 @@ spring:
   application:
     name: ink-workshop
   datasource:
-    url: jdbc:postgresql://localhost:5433/ink_workshop
+    url: jdbc:postgresql://localhost:5433/ink_order
     username: ink
     password: ink
   jpa:
@@ -16,6 +16,10 @@ server:
   port: 8080
 
 ink:
+  catalog:
+    base-url: http://localhost:8082
+    connect-timeout: 1s
+    read-timeout: 2s
   inventory:
     base-url: http://localhost:8081
     connect-timeout: 1s

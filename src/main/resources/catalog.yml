@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: ink-catalog
+  datasource:
+    url: jdbc:postgresql://localhost:5433/ink_catalog
+    username: ink
+    password: ink
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.jdbc.time_zone: UTC
+  flyway:
+    locations: classpath:db/catalog
+
+server:
+  port: 8082

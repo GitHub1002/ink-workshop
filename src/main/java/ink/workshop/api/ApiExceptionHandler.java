@@ -1,5 +1,6 @@
 package ink.workshop.api;
 
+import ink.workshop.catalog.CatalogUnavailableException;
 import ink.workshop.catalog.ProductNotFoundException;
 import ink.workshop.inventory.IdempotencyConflictException;
 import ink.workshop.inventory.InsufficientStockException;
@@ -46,6 +47,12 @@ public class ApiExceptionHandler {
   @ExceptionHandler(MissingIdempotencyKeyException.class)
   ResponseEntity<ApiError> missingIdempotencyKey(MissingIdempotencyKeyException exception) {
     return ResponseEntity.badRequest().body(new ApiError("VALIDATION_ERROR", exception.getMessage()));
+  }
+
+  @ExceptionHandler(CatalogUnavailableException.class)
+  ResponseEntity<ApiError> catalogUnavailable(CatalogUnavailableException exception) {
+    return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT)
+        .body(new ApiError("CATALOG_UNAVAILABLE", exception.getMessage()));
   }
 
   @ExceptionHandler(ProductNotFoundException.class)
