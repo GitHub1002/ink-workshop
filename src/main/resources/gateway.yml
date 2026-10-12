@@ -4,34 +4,37 @@ spring:
   config:
     import: optional:classpath:observability.yml
   cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        register-enabled: false
+    loadbalancer:
+      cache:
+        ttl: 3s
     gateway:
       server:
         webmvc:
           routes:
             - id: users
-              uri: ${ink.gateway.shop-base-url:http://localhost:8083}
+              uri: lb://ink-workshop
               predicates:
                 - Path=/users/**
             - id: sessions
-              uri: ${ink.gateway.shop-base-url:http://localhost:8083}
+              uri: lb://ink-workshop
               predicates:
                 - Path=/sessions/**
             - id: orders
-              uri: ${ink.gateway.shop-base-url:http://localhost:8083}
+              uri: lb://ink-workshop
               predicates:
                 - Path=/orders/**
             - id: products
-              uri: ${ink.gateway.shop-base-url:http://localhost:8083}
+              uri: lb://ink-workshop
               predicates:
                 - Path=/products/**
             - id: inventory
-              uri: ${ink.gateway.shop-base-url:http://localhost:8083}
+              uri: lb://ink-workshop
               predicates:
                 - Path=/inventory/**
 
 server:
   port: 8080
-
-ink:
-  gateway:
-    shop-base-url: http://localhost:8083

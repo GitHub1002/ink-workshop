@@ -12,6 +12,13 @@ spring:
       - org.springframework.cloud.gateway.server.mvc.handler.GatewayMultipartAutoConfiguration
       - org.springframework.cloud.gateway.server.mvc.predicate.PredicateAutoConfiguration
       - org.springframework.cloud.gateway.server.mvc.config.DefaultFunctionConfiguration
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        ip: ${INK_ADVERTISE_HOST:127.0.0.1}
+        port: ${server.port}
+        prefer-ip-address: true
   datasource:
     url: jdbc:postgresql://localhost:5433/ink_order
     username: ink

@@ -71,6 +71,7 @@ class PlaceOrderIntegrationTest {
     registry.add("spring.rabbitmq.username", rabbit::getAdminUsername);
     registry.add("spring.rabbitmq.password", rabbit::getAdminPassword);
     registry.add("ink.outbox.delay", () -> "200");
+    registry.add("spring.cloud.nacos.discovery.enabled", () -> "false");
     registry.add("spring.rabbitmq.listener.simple.retry.initial-interval", () -> "50ms");
   }
 

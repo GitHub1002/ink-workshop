@@ -10,7 +10,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
 
-@SpringBootTest(properties = "spring.config.name=gateway")
+@SpringBootTest(properties = {
+    "spring.config.name=gateway",
+    "spring.cloud.nacos.discovery.enabled=false"
+})
 @AutoConfigureMockMvc
 class GatewayApplicationTest {
 

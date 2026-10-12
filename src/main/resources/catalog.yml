@@ -12,6 +12,10 @@ spring:
       - org.springframework.cloud.gateway.server.mvc.handler.GatewayMultipartAutoConfiguration
       - org.springframework.cloud.gateway.server.mvc.predicate.PredicateAutoConfiguration
       - org.springframework.cloud.gateway.server.mvc.config.DefaultFunctionConfiguration
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
   datasource:
     url: jdbc:postgresql://localhost:5433/ink_catalog
     username: ink

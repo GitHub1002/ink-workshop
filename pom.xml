@@ -15,7 +15,7 @@
   <artifactId>ink-workshop</artifactId>
   <version>0.1.0</version>
   <name>ink-workshop</name>
-  <description>墨坊阶段 5：网关是唯一入口，并带上请求号、健康检查和调用链</description>
+  <description>墨坊阶段 6：两份店铺登记到 Nacos，由网关分流</description>
 
   <properties>
     <java.version>21</java.version>
@@ -29,6 +29,13 @@
         <groupId>org.springframework.cloud</groupId>
         <artifactId>spring-cloud-dependencies</artifactId>
         <version>${spring-cloud.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.alibaba.cloud</groupId>
+        <artifactId>spring-cloud-alibaba-dependencies</artifactId>
+        <version>2025.1.0.0</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
@@ -80,6 +87,14 @@
     <dependency>
       <groupId>org.springframework.cloud</groupId>
       <artifactId>spring-cloud-starter-gateway-server-webmvc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
     </dependency>
 
     <dependency>

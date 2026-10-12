@@ -29,6 +29,9 @@ public class OutboxMessage {
   @Column(name = "published_at")
   private Instant publishedAt;
 
+  @Column(name = "claimed_at")
+  private Instant claimedAt;
+
   protected OutboxMessage() {}
 
   public OutboxMessage(String eventType, String payload, Instant createdAt) {
@@ -43,6 +46,10 @@ public class OutboxMessage {
 
   public String getPayload() {
     return payload;
+  }
+
+  public void claim(Instant claimedAt) {
+    this.claimedAt = claimedAt;
   }
 
   public void markPublished(Instant publishedAt) {
