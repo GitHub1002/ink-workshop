@@ -30,6 +30,7 @@ class SecurityConfig {
             .requestMatchers(HttpMethod.POST, "/users", "/sessions").permitAll()
             .requestMatchers(HttpMethod.GET, "/products", "/products/**").permitAll()
             .requestMatchers(HttpMethod.GET, "/inventory/**").permitAll()
+            .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
             .anyRequest().authenticated())
         .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(new JsonAuthenticationEntryPoint()))
         .addFilterBefore(new TokenAuthenticationFilter(userService), UsernamePasswordAuthenticationFilter.class)

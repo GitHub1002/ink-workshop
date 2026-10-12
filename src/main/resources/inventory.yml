@@ -1,6 +1,17 @@
 spring:
   application:
     name: ink-inventory
+  config:
+    import: optional:classpath:observability.yml
+  autoconfigure:
+    exclude:
+      - org.springframework.cloud.gateway.server.mvc.GatewayServerMvcAutoConfiguration
+      - org.springframework.cloud.gateway.server.mvc.GatewayMvcClassPathWarningAutoConfiguration
+      - org.springframework.cloud.gateway.server.mvc.filter.FilterAutoConfiguration
+      - org.springframework.cloud.gateway.server.mvc.handler.HandlerFunctionAutoConfiguration
+      - org.springframework.cloud.gateway.server.mvc.handler.GatewayMultipartAutoConfiguration
+      - org.springframework.cloud.gateway.server.mvc.predicate.PredicateAutoConfiguration
+      - org.springframework.cloud.gateway.server.mvc.config.DefaultFunctionConfiguration
   datasource:
     url: jdbc:postgresql://localhost:5433/ink_inventory
     username: ink

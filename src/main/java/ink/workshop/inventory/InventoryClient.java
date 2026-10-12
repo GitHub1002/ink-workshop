@@ -4,9 +4,11 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.function.Supplier;
 
+import ink.observability.RequestIds;
 import ink.workshop.api.ApiError;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -21,12 +23,14 @@ public class InventoryClient {
   private static final String UNAVAILABLE = "库存服务没有在时限内返回";
 
   private final JsonMapper jsonMapper = JsonMapper.builder().build();
+  private final ObjectProvider<RestClient.Builder> clientBuilders;
   private final Duration connectTimeout;
   private final Duration readTimeout;
   private volatile String baseUrl;
   private volatile RestClient client;
 
-  public InventoryClient(InventoryProperties properties) {
+  public InventoryClient(InventoryProperties properties, ObjectProvider<RestClient.Builder> clientBuilders) {
+    this.clientBuilders = clientBuilders;
     this.connectTimeout = properties.connectTimeout();
     this.readTimeout = properties.readTimeout();
     useBaseUrl(properties.baseUrl());
@@ -37,9 +41,10 @@ public class InventoryClient {
     SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
     requestFactory.setConnectTimeout(connectTimeout);
     requestFactory.setReadTimeout(readTimeout);
-    this.client = RestClient.builder()
+    this.client = clientBuilders.getObject()
         .baseUrl(baseUrl)
         .requestFactory(requestFactory)
+        .requestInterceptor(RequestIds.forward())
         .build();
   }
 

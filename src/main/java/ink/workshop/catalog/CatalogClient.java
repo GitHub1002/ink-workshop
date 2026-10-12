@@ -5,9 +5,11 @@ import java.time.Duration;
 import java.util.List;
 import java.util.function.Supplier;
 
+import ink.observability.RequestIds;
 import ink.workshop.api.ApiError;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -24,12 +26,14 @@ public class CatalogClient {
   private static final TypeReference<List<ProductResponse>> PRODUCT_LIST = new TypeReference<>() {};
 
   private final JsonMapper jsonMapper = JsonMapper.builder().build();
+  private final ObjectProvider<RestClient.Builder> clientBuilders;
   private final Duration connectTimeout;
   private final Duration readTimeout;
   private volatile String baseUrl;
   private volatile RestClient client;
 
-  public CatalogClient(CatalogProperties properties) {
+  public CatalogClient(CatalogProperties properties, ObjectProvider<RestClient.Builder> clientBuilders) {
+    this.clientBuilders = clientBuilders;
     this.connectTimeout = properties.connectTimeout();
     this.readTimeout = properties.readTimeout();
     useBaseUrl(properties.baseUrl());
@@ -40,9 +44,10 @@ public class CatalogClient {
     SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
     requestFactory.setConnectTimeout(connectTimeout);
     requestFactory.setReadTimeout(readTimeout);
-    this.client = RestClient.builder()
+    this.client = clientBuilders.getObject()
         .baseUrl(baseUrl)
         .requestFactory(requestFactory)
+        .requestInterceptor(RequestIds.forward())
         .build();
   }
 

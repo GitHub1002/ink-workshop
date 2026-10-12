@@ -1,0 +1,37 @@
+spring:
+  application:
+    name: ink-gateway
+  config:
+    import: optional:classpath:observability.yml
+  cloud:
+    gateway:
+      server:
+        webmvc:
+          routes:
+            - id: users
+              uri: ${ink.gateway.shop-base-url:http://localhost:8083}
+              predicates:
+                - Path=/users/**
+            - id: sessions
+              uri: ${ink.gateway.shop-base-url:http://localhost:8083}
+              predicates:
+                - Path=/sessions/**
+            - id: orders
+              uri: ${ink.gateway.shop-base-url:http://localhost:8083}
+              predicates:
+                - Path=/orders/**
+            - id: products
+              uri: ${ink.gateway.shop-base-url:http://localhost:8083}
+              predicates:
+                - Path=/products/**
+            - id: inventory
+              uri: ${ink.gateway.shop-base-url:http://localhost:8083}
+              predicates:
+                - Path=/inventory/**
+
+server:
+  port: 8080
+
+ink:
+  gateway:
+    shop-base-url: http://localhost:8083

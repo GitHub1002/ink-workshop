@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -132,6 +133,13 @@ class PlaceOrderIntegrationTest {
     inventoryJdbc.update("delete from inventory where product_id > 4");
     inventoryJdbc.update("update inventory set available = 10");
     catalogJdbc.update("delete from products where id > 4");
+  }
+
+  @Test
+  void exposesHealthWithoutLogin() throws Exception {
+    mockMvc.perform(get("/actuator/health"))
+        .andExpect(status().isOk())
+        .andExpect(header().exists("X-Request-Id"));
   }
 
   @Test

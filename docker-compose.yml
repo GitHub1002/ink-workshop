@@ -29,6 +29,11 @@ services:
       timeout: 5s
       retries: 20
 
+  zipkin:
+    image: openzipkin/zipkin:3
+    ports:
+      - "9411:9411"
+
   app:
     build: .
     depends_on:
@@ -45,8 +50,19 @@ services:
       SPRING_RABBITMQ_PASSWORD: ink
       INK_CATALOG_BASE_URL: http://catalog:8082
       INK_INVENTORY_BASE_URL: http://inventory:8081
+      MANAGEMENT_TRACING_EXPORT_ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+
+  gateway:
+    build: .
+    depends_on:
+      - app
+    environment:
+      SPRING_CONFIG_NAME: gateway
+      INK_GATEWAY_SHOP_BASE_URL: http://app:8083
+      MANAGEMENT_TRACING_EXPORT_ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
     ports:
       - "8080:8080"
+    entrypoint: ["java", "-Dloader.main=ink.gateway.GatewayApplication", "-cp", "app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]
 
   inventory:
     build: .
@@ -64,8 +80,7 @@ services:
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_USERNAME: ink
       SPRING_RABBITMQ_PASSWORD: ink
-    ports:
-      - "8081:8081"
+      MANAGEMENT_TRACING_EXPORT_ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
     entrypoint: ["java", "-Dloader.main=ink.inventory.InventoryApplication", "-cp", "app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]
 
   catalog:
@@ -79,6 +94,5 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ink_catalog
       SPRING_DATASOURCE_USERNAME: ink
       SPRING_DATASOURCE_PASSWORD: ink
-    ports:
-      - "8082:8082"
+      MANAGEMENT_TRACING_EXPORT_ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
     entrypoint: ["java", "-Dloader.main=ink.catalog.CatalogApplication", "-cp", "app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]
