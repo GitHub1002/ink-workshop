@@ -15,17 +15,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class InventoryController {
 
   private final InventoryService inventoryService;
-  private final DeductionService deductionService;
 
-  public InventoryController(InventoryService inventoryService, DeductionService deductionService) {
+  public InventoryController(InventoryService inventoryService) {
     this.inventoryService = inventoryService;
-    this.deductionService = deductionService;
-  }
-
-  @PostMapping("/deductions")
-  public DeductionResponse deduct(@Valid @RequestBody DeductStockRequest request) {
-    deductionService.deduct(request);
-    return new DeductionResponse("APPLIED");
   }
 
   @PostMapping("/inventory/{productId}")

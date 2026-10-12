@@ -13,6 +13,22 @@ spring:
       hibernate.jdbc.time_zone: UTC
   flyway:
     locations: classpath:db/inventory
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: ink
+    password: ink
+    listener:
+      simple:
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 500ms
 
 server:
   port: 8081
+
+ink:
+  outbox:
+    delay: 1000

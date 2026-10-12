@@ -1,7 +1,9 @@
 package ink.inventory;
 
+import java.time.Clock;
 import java.util.Map;
 
+import ink.messaging.StockTopology;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.security.autoconfigure.SecurityAutoConfiguration;
@@ -9,6 +11,9 @@ import org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoCon
 import org.springframework.boot.security.autoconfigure.web.servlet.SecurityFilterAutoConfiguration;
 import org.springframework.boot.security.autoconfigure.web.servlet.ServletWebSecurityAutoConfiguration;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication(exclude = {
     SecurityAutoConfiguration.class,
@@ -16,6 +21,8 @@ import org.springframework.context.ConfigurableApplicationContext;
     SecurityFilterAutoConfiguration.class,
     ServletWebSecurityAutoConfiguration.class
 })
+@EnableScheduling
+@Import(StockTopology.class)
 public class InventoryApplication {
 
   public static void main(String[] args) {
@@ -26,5 +33,10 @@ public class InventoryApplication {
     SpringApplication application = new SpringApplication(InventoryApplication.class);
     application.setDefaultProperties(Map.of("spring.config.name", "inventory"));
     return application.run(args);
+  }
+
+  @Bean
+  Clock clock() {
+    return Clock.systemUTC();
   }
 }

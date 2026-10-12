@@ -1,5 +1,7 @@
 package ink.workshop.order;
 
 public enum OrderStatus {
-  CREATED
+  PENDING,
+  RESERVED,
+  REJECTED
 }

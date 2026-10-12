@@ -7,17 +7,17 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import java.net.ServerSocket;
-import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
 
 import com.jayway.jsonpath.JsonPath;
 import ink.catalog.CatalogApplication;
 import ink.inventory.InventoryApplication;
+import ink.messaging.StockTopology;
 import ink.workshop.catalog.CatalogClient;
 import ink.workshop.inventory.InventoryClient;
 import org.junit.jupiter.api.AfterAll;
@@ -25,6 +25,10 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.springframework.amqp.core.MessageBuilder;
+import org.springframework.amqp.core.MessageProperties;
+import org.springframework.amqp.rabbit.core.RabbitAdmin;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -33,12 +37,15 @@ import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.rabbitmq.RabbitMQContainer;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -49,6 +56,22 @@ class PlaceOrderIntegrationTest {
   @Container
   @ServiceConnection
   static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:16");
+
+  @Container
+  static final RabbitMQContainer rabbit = new RabbitMQContainer("rabbitmq:3.13-management")
+      .withAdminUser("ink")
+      .withAdminPassword("ink");
+
+  @DynamicPropertySource
+  static void rabbitProperties(DynamicPropertyRegistry registry) {
+    rabbit.start();
+    registry.add("spring.rabbitmq.host", rabbit::getHost);
+    registry.add("spring.rabbitmq.port", rabbit::getAmqpPort);
+    registry.add("spring.rabbitmq.username", rabbit::getAdminUsername);
+    registry.add("spring.rabbitmq.password", rabbit::getAdminPassword);
+    registry.add("ink.outbox.delay", () -> "200");
+    registry.add("spring.rabbitmq.listener.simple.retry.initial-interval", () -> "50ms");
+  }
 
   @Autowired
   private MockMvc mockMvc;
@@ -62,6 +85,12 @@ class PlaceOrderIntegrationTest {
   @Autowired
   private CatalogClient catalogClient;
 
+  @Autowired
+  private RabbitTemplate rabbitTemplate;
+
+  @Autowired
+  private RabbitAdmin rabbitAdmin;
+
   private ConfigurableApplicationContext inventory;
   private ConfigurableApplicationContext catalog;
   private String inventoryBaseUrl;
@@ -73,7 +102,7 @@ class PlaceOrderIntegrationTest {
     createDatabase("ink_catalog");
     createDatabase("ink_inventory");
     catalog = startService(CatalogApplication::start, "ink_catalog");
-    inventory = startService(InventoryApplication::start, "ink_inventory");
+    inventory = startInventory();
     catalogClient.useBaseUrl(baseUrl(catalog));
     inventoryBaseUrl = baseUrl(inventory);
     inventoryClient.useBaseUrl(inventoryBaseUrl);
@@ -93,10 +122,12 @@ class PlaceOrderIntegrationTest {
 
   @BeforeEach
   void resetShop() {
+    jdbcTemplate.update("delete from outbox");
     jdbcTemplate.update("delete from order_lines");
     jdbcTemplate.update("delete from orders");
     jdbcTemplate.update("delete from sessions");
     jdbcTemplate.update("delete from users");
+    inventoryJdbc.update("delete from outbox");
     inventoryJdbc.update("delete from stock_deductions");
     inventoryJdbc.update("delete from inventory where product_id > 4");
     inventoryJdbc.update("update inventory set available = 10");
@@ -124,16 +155,19 @@ class PlaceOrderIntegrationTest {
   void placesOrderAndDeductsStock() throws Exception {
     LoggedIn user = registerAndLogin("buyer@example.com");
 
-    place(user, "deduct-stock", """
+    MvcResult accepted = place(user, "deduct-stock", """
         {"lines":[{"productId":1,"quantity":2}]}
         """)
-        .andExpect(status().isCreated())
-        .andExpect(jsonPath("$.status").value("CREATED"))
+        .andExpect(status().isAccepted())
+        .andExpect(jsonPath("$.status").value("PENDING"))
         .andExpect(jsonPath("$.userId").value(user.userId()))
         .andExpect(jsonPath("$.totalCents").value(13600))
         .andExpect(jsonPath("$.lines[0].productName").value("松烟墨"))
         .andExpect(jsonPath("$.lines[0].unitPriceCents").value(6800))
-        .andExpect(jsonPath("$.lines[0].quantity").value(2));
+        .andExpect(jsonPath("$.lines[0].quantity").value(2))
+        .andReturn();
+    long orderId = orderId(accepted);
+    awaitStatus(user, orderId, "RESERVED");
 
     mockMvc.perform(get("/inventory/1"))
         .andExpect(status().isOk())
@@ -146,13 +180,15 @@ class PlaceOrderIntegrationTest {
   void rejectsOrderWhenStockIsShort() throws Exception {
     LoggedIn user = registerAndLogin("buyer@example.com");
 
-    place(user, "short-stock", """
+    MvcResult accepted = place(user, "short-stock", """
         {"lines":[{"productId":1,"quantity":11}]}
         """)
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("INSUFFICIENT_STOCK"));
+        .andExpect(status().isAccepted())
+        .andExpect(jsonPath("$.status").value("PENDING"))
+        .andReturn();
+    awaitStatus(user, orderId(accepted), "REJECTED");
 
-    assertThat(orderCount()).isZero();
+    assertThat(orderCount()).isEqualTo(1);
     assertThat(available(1)).isEqualTo(10);
   }
 
@@ -160,13 +196,15 @@ class PlaceOrderIntegrationTest {
   void rollsBackEarlierLinesWhenALaterLineIsShort() throws Exception {
     LoggedIn user = registerAndLogin("buyer@example.com");
 
-    place(user, "rollback-lines", """
+    MvcResult accepted = place(user, "rollback-lines", """
         {"lines":[{"productId":1,"quantity":1},{"productId":2,"quantity":11}]}
         """)
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("INSUFFICIENT_STOCK"));
+        .andExpect(status().isAccepted())
+        .andExpect(jsonPath("$.status").value("PENDING"))
+        .andReturn();
+    awaitStatus(user, orderId(accepted), "REJECTED");
 
-    assertThat(orderCount()).isZero();
+    assertThat(orderCount()).isEqualTo(1);
     assertThat(available(1)).isEqualTo(10);
     assertThat(available(2)).isEqualTo(10);
   }
@@ -190,9 +228,9 @@ class PlaceOrderIntegrationTest {
     MvcResult created = place(buyer, "buyer-order", """
         {"lines":[{"productId":1,"quantity":1}]}
         """)
-        .andExpect(status().isCreated())
+        .andExpect(status().isAccepted())
         .andReturn();
-    int orderId = JsonPath.read(body(created), "$.id");
+    long orderId = orderId(created);
 
     mockMvc.perform(get("/orders").header("Authorization", bearer(buyer.token())))
         .andExpect(status().isOk())
@@ -206,6 +244,8 @@ class PlaceOrderIntegrationTest {
     mockMvc.perform(get("/orders/" + orderId).header("Authorization", bearer(other.token())))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("ORDER_NOT_FOUND"));
+
+    awaitStatus(buyer, orderId, "RESERVED");
   }
 
   @Test
@@ -257,12 +297,14 @@ class PlaceOrderIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.available").value(3));
 
-    place(user, "inkstone-" + productId, """
+    MvcResult accepted = place(user, "inkstone-" + productId, """
         {"lines":[{"productId":%d,"quantity":2}]}
         """.formatted(productId))
-        .andExpect(status().isCreated())
+        .andExpect(status().isAccepted())
         .andExpect(jsonPath("$.totalCents").value(44000))
-        .andExpect(jsonPath("$.lines[0].productName").value("端砚"));
+        .andExpect(jsonPath("$.lines[0].productName").value("端砚"))
+        .andReturn();
+    awaitStatus(user, orderId(accepted), "RESERVED");
 
     assertThat(available(productId)).isEqualTo(1);
   }
@@ -315,31 +357,48 @@ class PlaceOrderIntegrationTest {
         {"lines":[{"productId":1,"quantity":2}]}
         """;
 
-    MvcResult first = place(user, "same-order", body)
-        .andExpect(status().isCreated())
-        .andReturn();
-    int orderId = JsonPath.read(body(first), "$.id");
-
-    jdbcTemplate.update("delete from order_lines");
-    jdbcTemplate.update("delete from orders");
+    long orderId = placeAndAwait(user, "same-order", body, "RESERVED");
 
     place(user, "same-order", body)
-        .andExpect(status().isCreated())
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(orderId))
+        .andExpect(jsonPath("$.status").value("RESERVED"))
         .andExpect(jsonPath("$.totalCents").value(13600));
 
     assertThat(orderCount()).isEqualTo(1);
     assertThat(available(1)).isEqualTo(8);
-    assertThat(orderId).isPositive();
+  }
+
+  @Test
+  void ignoresARedeliveredDeduction() throws Exception {
+    LoggedIn user = registerAndLogin("buyer@example.com");
+    placeAndAwait(user, "redeliver", """
+        {"lines":[{"productId":1,"quantity":2}]}
+        """, "RESERVED");
+    String payload = jdbcTemplate.queryForObject(
+        "select payload from outbox order by id desc limit 1", String.class);
+    rabbitTemplate.send(
+        StockTopology.EXCHANGE,
+        StockTopology.DEDUCT_KEY,
+        MessageBuilder.withBody(payload.getBytes(StandardCharsets.UTF_8))
+            .setContentType(MessageProperties.CONTENT_TYPE_JSON)
+            .build());
+
+    long deadline = System.nanoTime() + Duration.ofSeconds(3).toNanos();
+    while (System.nanoTime() < deadline) {
+      assertThat(available(1)).isEqualTo(8);
+      Thread.sleep(100);
+    }
+    assertThat(orderCount()).isEqualTo(1);
   }
 
   @Test
   void rejectsAReusedKeyWhenTheOrderContentsDiffer() throws Exception {
     LoggedIn user = registerAndLogin("buyer@example.com");
 
-    place(user, "one-key", """
+    placeAndAwait(user, "one-key", """
         {"lines":[{"productId":1,"quantity":1}]}
-        """)
-        .andExpect(status().isCreated());
+        """, "RESERVED");
 
     place(user, "one-key", """
         {"lines":[{"productId":1,"quantity":2}]}
@@ -368,35 +427,100 @@ class PlaceOrderIntegrationTest {
   }
 
   @Test
-  void reportsAnUnknownDeductionWhenInventoryDoesNotAnswer() throws Exception {
-    LoggedIn user = registerAndLogin("buyer@example.com");
-    Thread acceptor = null;
-    try (ServerSocket socket = new ServerSocket(0)) {
-      acceptor = new Thread(() -> {
-        try (Socket ignored = socket.accept()) {
-          Thread.sleep(10_000);
-        } catch (Exception ignored) {
-          // The request times out and this socket is closed.
-        }
-      });
-      acceptor.setDaemon(true);
-      acceptor.start();
-      inventoryClient.useBaseUrl("http://127.0.0.1:" + socket.getLocalPort());
-
-      place(user, "timed-out", """
+  void keepsTheOrderPendingUntilInventoryReturns() throws Exception {
+    inventory.close();
+    inventory = null;
+    try {
+      LoggedIn user = registerAndLogin("buyer@example.com");
+      MvcResult accepted = place(user, "while-down", """
           {"lines":[{"productId":1,"quantity":1}]}
           """)
-          .andExpect(status().isGatewayTimeout())
-          .andExpect(jsonPath("$.code").value("STOCK_DEDUCTION_UNKNOWN"));
-    } finally {
+          .andExpect(status().isAccepted())
+          .andExpect(jsonPath("$.status").value("PENDING"))
+          .andReturn();
+      long orderId = orderId(accepted);
+      awaitOutboxPublished();
+      assertThat(orderStatus(user, orderId)).isEqualTo("PENDING");
+      assertThat(available(1)).isEqualTo(10);
+
+      inventory = startInventory();
+      inventoryBaseUrl = baseUrl(inventory);
       inventoryClient.useBaseUrl(inventoryBaseUrl);
-      if (acceptor != null) {
-        acceptor.interrupt();
+      awaitStatus(user, orderId, "RESERVED");
+      assertThat(available(1)).isEqualTo(9);
+    } finally {
+      if (inventory == null || !inventory.isActive()) {
+        inventory = startInventory();
+        inventoryBaseUrl = baseUrl(inventory);
+        inventoryClient.useBaseUrl(inventoryBaseUrl);
       }
     }
+  }
 
-    assertThat(orderCount()).isZero();
-    assertThat(available(1)).isEqualTo(10);
+  @Test
+  void sendsAPoisonDeductionMessageToTheDeadLetterQueue() throws Exception {
+    rabbitTemplate.send(
+        StockTopology.EXCHANGE,
+        StockTopology.DEDUCT_KEY,
+        MessageBuilder.withBody("not-json".getBytes(StandardCharsets.UTF_8))
+            .setContentType(MessageProperties.CONTENT_TYPE_JSON)
+            .build());
+
+    long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+    Number count = 0;
+    while (System.nanoTime() < deadline) {
+      var properties = rabbitAdmin.getQueueProperties(StockTopology.DEDUCT_DLQ);
+      count = properties == null ? 0 : (Number) properties.get(RabbitAdmin.QUEUE_MESSAGE_COUNT);
+      if (count != null && count.intValue() > 0) {
+        return;
+      }
+      Thread.sleep(100);
+    }
+    throw new AssertionError("死信队列还是空的，当前消息数 " + count);
+  }
+
+  private long placeAndAwait(LoggedIn user, String idempotencyKey, String json, String expectedStatus)
+      throws Exception {
+    MvcResult accepted = place(user, idempotencyKey, json)
+        .andExpect(status().isAccepted())
+        .andReturn();
+    long orderId = orderId(accepted);
+    awaitStatus(user, orderId, expectedStatus);
+    return orderId;
+  }
+
+  private void awaitStatus(LoggedIn user, long orderId, String expectedStatus) throws Exception {
+    long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+    String latest = "";
+    while (System.nanoTime() < deadline) {
+      latest = orderStatus(user, orderId);
+      if (expectedStatus.equals(latest)) {
+        return;
+      }
+      Thread.sleep(50);
+    }
+    throw new AssertionError("订单 " + orderId + " 期望 " + expectedStatus + "，实际 " + latest);
+  }
+
+  private String orderStatus(LoggedIn user, long orderId) throws Exception {
+    MvcResult result = mockMvc.perform(get("/orders/" + orderId)
+            .header("Authorization", bearer(user.token())))
+        .andExpect(status().isOk())
+        .andReturn();
+    return JsonPath.read(body(result), "$.status");
+  }
+
+  private void awaitOutboxPublished() throws InterruptedException {
+    long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+    while (System.nanoTime() < deadline) {
+      Long count = jdbcTemplate.queryForObject(
+          "select count(*) from outbox where published_at is not null", Long.class);
+      if (count != null && count > 0) {
+        return;
+      }
+      Thread.sleep(50);
+    }
+    throw new AssertionError("发件箱里的消息没有发出去");
   }
 
   private ResultActions place(LoggedIn user, String idempotencyKey, String json) throws Exception {
@@ -428,6 +552,11 @@ class PlaceOrderIntegrationTest {
         .andReturn();
     String token = JsonPath.read(body(session), "$.token");
     return new LoggedIn(userId.longValue(), token);
+  }
+
+  private static long orderId(MvcResult result) throws Exception {
+    Number id = JsonPath.read(body(result), "$.id");
+    return id.longValue();
   }
 
   private static String bearer(String token) {
@@ -467,6 +596,20 @@ class PlaceOrderIntegrationTest {
         "--spring.datasource.url=" + databaseUrl(database),
         "--spring.datasource.username=" + postgres.getUsername(),
         "--spring.datasource.password=" + postgres.getPassword());
+  }
+
+  private ConfigurableApplicationContext startInventory() {
+    return InventoryApplication.start(
+        "--server.port=0",
+        "--spring.datasource.url=" + databaseUrl("ink_inventory"),
+        "--spring.datasource.username=" + postgres.getUsername(),
+        "--spring.datasource.password=" + postgres.getPassword(),
+        "--spring.rabbitmq.host=" + rabbit.getHost(),
+        "--spring.rabbitmq.port=" + rabbit.getAmqpPort(),
+        "--spring.rabbitmq.username=" + rabbit.getAdminUsername(),
+        "--spring.rabbitmq.password=" + rabbit.getAdminPassword(),
+        "--ink.outbox.delay=200",
+        "--spring.rabbitmq.listener.simple.retry.initial-interval=50ms");
   }
 
   private String databaseUrl(String database) {

@@ -11,6 +11,18 @@ spring:
       ddl-auto: validate
     properties:
       hibernate.jdbc.time_zone: UTC
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: ink
+    password: ink
+    listener:
+      simple:
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 500ms
 
 server:
   port: 8080
@@ -24,3 +36,5 @@ ink:
     base-url: http://localhost:8081
     connect-timeout: 1s
     read-timeout: 2s
+  outbox:
+    delay: 1000

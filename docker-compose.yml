@@ -15,15 +15,34 @@ services:
       timeout: 3s
       retries: 20
 
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ink
+      RABBITMQ_DEFAULT_PASS: ink
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   app:
     build: .
     depends_on:
       postgres:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ink_order
       SPRING_DATASOURCE_USERNAME: ink
       SPRING_DATASOURCE_PASSWORD: ink
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: ink
+      SPRING_RABBITMQ_PASSWORD: ink
       INK_CATALOG_BASE_URL: http://catalog:8082
       INK_INVENTORY_BASE_URL: http://inventory:8081
     ports:
@@ -35,11 +54,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       SPRING_CONFIG_NAME: inventory
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ink_inventory
       SPRING_DATASOURCE_USERNAME: ink
       SPRING_DATASOURCE_PASSWORD: ink
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: ink
+      SPRING_RABBITMQ_PASSWORD: ink
     ports:
       - "8081:8081"
     entrypoint: ["java", "-Dloader.main=ink.inventory.InventoryApplication", "-cp", "app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]

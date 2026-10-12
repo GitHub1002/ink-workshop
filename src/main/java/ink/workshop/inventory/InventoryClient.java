@@ -2,11 +2,9 @@ package ink.workshop.inventory;
 
 import java.io.IOException;
 import java.time.Duration;
-import java.util.List;
 import java.util.function.Supplier;
 
 import ink.workshop.api.ApiError;
-import ink.workshop.order.LineSnapshot;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -20,8 +18,6 @@ import tools.jackson.databind.json.JsonMapper;
 public class InventoryClient {
 
   private static final Logger log = LoggerFactory.getLogger(InventoryClient.class);
-  private static final String DEDUCTION_UNKNOWN =
-      "库存服务没有在时限内返回，扣减结果未知。请用同一个 Idempotency-Key 重试";
   private static final String UNAVAILABLE = "库存服务没有在时限内返回";
 
   private final JsonMapper jsonMapper = JsonMapper.builder().build();
@@ -51,22 +47,12 @@ public class InventoryClient {
     return baseUrl;
   }
 
-  public void deduct(String idempotencyKey, List<LineSnapshot> lines) {
-    List<DeductionLine> bodyLines = lines.stream()
-        .map(line -> new DeductionLine(line.productId(), line.productName(), line.quantity()))
-        .toList();
-    send(() -> client.post()
-        .uri("/deductions")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new DeductStockRequest(idempotencyKey, bodyLines)), DeductionResponse.class, true);
-  }
-
   public void initialize(long productId) {
-    send(() -> client.post().uri("/inventory/{productId}", productId), Void.class, false);
+    send(() -> client.post().uri("/inventory/{productId}", productId), Void.class);
   }
 
   public InventoryResponse get(long productId) {
-    return send(() -> client.get().uri("/inventory/{productId}", productId), InventoryResponse.class, false);
+    return send(() -> client.get().uri("/inventory/{productId}", productId), InventoryResponse.class);
   }
 
   public InventoryResponse setAvailable(long productId, int available) {
@@ -75,20 +61,18 @@ public class InventoryClient {
             .uri("/inventory/{productId}", productId)
             .contentType(MediaType.APPLICATION_JSON)
             .body(new SetStockRequest(available)),
-        InventoryResponse.class,
-        false);
+        InventoryResponse.class);
   }
 
-  private <T> T send(
-      Supplier<RestClient.RequestHeadersSpec<?>> request, Class<T> type, boolean deduction) {
+  private <T> T send(Supplier<RestClient.RequestHeadersSpec<?>> request, Class<T> type) {
     try {
-      return request.get().exchange((httpRequest, response) -> read(response, type, deduction));
+      return request.get().exchange((httpRequest, response) -> read(response, type));
     } catch (ResourceAccessException exception) {
-      throw unavailable(deduction, exception);
+      throw unavailable(exception);
     }
   }
 
-  private <T> T read(RestClient.RequestHeadersSpec.ConvertibleClientHttpResponse response, Class<T> type, boolean deduction)
+  private <T> T read(RestClient.RequestHeadersSpec.ConvertibleClientHttpResponse response, Class<T> type)
       throws IOException {
     byte[] payload = response.getBody().readAllBytes();
     if (response.getStatusCode().is2xxSuccessful()) {
@@ -100,28 +84,20 @@ public class InventoryClient {
     ApiError error = payload.length == 0
         ? new ApiError("INTERNAL_ERROR", "库存服务调用失败")
         : jsonMapper.readValue(payload, ApiError.class);
-    throw map(error, deduction);
+    throw map(error);
   }
 
-  private RuntimeException map(ApiError error, boolean deduction) {
+  private RuntimeException map(ApiError error) {
     return switch (error.code()) {
       case "INSUFFICIENT_STOCK" -> new InsufficientStockException(error.message());
       case "INVENTORY_NOT_FOUND" -> new InventoryNotFoundException(error.message());
       case "IDEMPOTENCY_CONFLICT" -> new IdempotencyConflictException();
-      default -> unavailable(deduction, new IllegalStateException(error.code() + " " + error.message()));
+      default -> unavailable(new IllegalStateException(error.code() + " " + error.message()));
     };
   }
 
-  private InventoryUnavailableException unavailable(boolean deduction, Exception cause) {
-    String message = deduction ? DEDUCTION_UNKNOWN : UNAVAILABLE;
-    log.error("inventory_unavailable deduction={} baseUrl={}", deduction, baseUrl, cause);
-    String code = deduction ? "STOCK_DEDUCTION_UNKNOWN" : "STOCK_SERVICE_UNAVAILABLE";
-    return new InventoryUnavailableException(code, message);
+  private InventoryUnavailableException unavailable(Exception cause) {
+    log.error("inventory_unavailable baseUrl={}", baseUrl, cause);
+    return new InventoryUnavailableException("STOCK_SERVICE_UNAVAILABLE", UNAVAILABLE);
   }
-
-  private record DeductStockRequest(String idempotencyKey, List<DeductionLine> lines) {}
-
-  private record DeductionLine(long productId, String productName, int quantity) {}
-
-  private record DeductionResponse(String status) {}
 }

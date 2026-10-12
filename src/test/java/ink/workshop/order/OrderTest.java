@@ -19,7 +19,10 @@ class OrderTest {
         "fingerprint");
 
     assertThat(order.getUserId()).isEqualTo(7L);
-    assertThat(order.getStatus()).isEqualTo(OrderStatus.CREATED);
+    assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+    assertThat(order.applyStockResult(OrderStatus.RESERVED)).isTrue();
+    assertThat(order.getStatus()).isEqualTo(OrderStatus.RESERVED);
+    assertThat(order.applyStockResult(OrderStatus.REJECTED)).isFalse();
     assertThat(order.getTotalCents()).isEqualTo(17200);
     assertThat(order.getLines()).hasSize(2);
     assertThat(order.getCreatedAt()).isEqualTo(Instant.parse("2026-10-10T12:00:00Z"));

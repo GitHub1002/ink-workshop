@@ -33,8 +33,12 @@ public class OrderController {
     if (idempotencyKey == null || idempotencyKey.isBlank() || idempotencyKey.length() > 80) {
       throw new MissingIdempotencyKeyException();
     }
-    OrderResponse order = orderService.place(currentUser.id(), idempotencyKey.trim(), request);
-    return ResponseEntity.created(URI.create("/orders/" + order.id())).body(order);
+    PlaceResult result = orderService.place(currentUser.id(), idempotencyKey.trim(), request);
+    URI location = URI.create("/orders/" + result.order().id());
+    if (result.created()) {
+      return ResponseEntity.accepted().location(location).body(result.order());
+    }
+    return ResponseEntity.ok().location(location).body(result.order());
   }
 
   @GetMapping

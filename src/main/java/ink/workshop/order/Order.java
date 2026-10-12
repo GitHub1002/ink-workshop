@@ -55,7 +55,7 @@ public class Order {
       String lineFingerprint) {
     Order order = new Order();
     order.userId = userId;
-    order.status = OrderStatus.CREATED;
+    order.status = OrderStatus.PENDING;
     order.createdAt = createdAt;
     order.idempotencyKey = idempotencyKey;
     order.lineFingerprint = lineFingerprint;
@@ -75,6 +75,17 @@ public class Order {
 
   public OrderStatus getStatus() {
     return status;
+  }
+
+  public boolean applyStockResult(OrderStatus target) {
+    if (status == target || status != OrderStatus.PENDING) {
+      return false;
+    }
+    if (target != OrderStatus.RESERVED && target != OrderStatus.REJECTED) {
+      throw new IllegalArgumentException(target.name());
+    }
+    status = target;
+    return true;
   }
 
   public int getTotalCents() {
