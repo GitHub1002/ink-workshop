@@ -7,19 +7,28 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
 import com.jayway.jsonpath.JsonPath;
+import ink.inventory.InventoryApplication;
+import ink.workshop.inventory.InventoryClient;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -27,6 +36,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class PlaceOrderIntegrationTest {
 
   @Container
@@ -39,12 +49,38 @@ class PlaceOrderIntegrationTest {
   @Autowired
   private JdbcTemplate jdbcTemplate;
 
+  @Autowired
+  private InventoryClient inventoryClient;
+
+  private ConfigurableApplicationContext inventory;
+  private String inventoryBaseUrl;
+
+  @BeforeAll
+  void startInventory() {
+    inventory = InventoryApplication.start(
+        "--server.port=0",
+        "--spring.datasource.url=" + postgres.getJdbcUrl(),
+        "--spring.datasource.username=" + postgres.getUsername(),
+        "--spring.datasource.password=" + postgres.getPassword());
+    String port = inventory.getEnvironment().getProperty("local.server.port");
+    inventoryBaseUrl = "http://127.0.0.1:" + port;
+    inventoryClient.useBaseUrl(inventoryBaseUrl);
+  }
+
+  @AfterAll
+  void stopInventory() {
+    if (inventory != null) {
+      inventory.close();
+    }
+  }
+
   @BeforeEach
   void resetShop() {
     jdbcTemplate.update("delete from order_lines");
     jdbcTemplate.update("delete from orders");
     jdbcTemplate.update("delete from sessions");
     jdbcTemplate.update("delete from users");
+    jdbcTemplate.update("delete from stock_deductions");
     jdbcTemplate.update("delete from inventory where product_id > 4");
     jdbcTemplate.update("delete from products where id > 4");
     jdbcTemplate.update("update inventory set available = 10");
@@ -71,12 +107,9 @@ class PlaceOrderIntegrationTest {
   void placesOrderAndDeductsStock() throws Exception {
     LoggedIn user = registerAndLogin("buyer@example.com");
 
-    mockMvc.perform(post("/orders")
-            .header("Authorization", bearer(user.token()))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
-                {"lines":[{"productId":1,"quantity":2}]}
-                """))
+    place(user, "deduct-stock", """
+        {"lines":[{"productId":1,"quantity":2}]}
+        """)
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.status").value("CREATED"))
         .andExpect(jsonPath("$.userId").value(user.userId()))
@@ -96,12 +129,9 @@ class PlaceOrderIntegrationTest {
   void rejectsOrderWhenStockIsShort() throws Exception {
     LoggedIn user = registerAndLogin("buyer@example.com");
 
-    mockMvc.perform(post("/orders")
-            .header("Authorization", bearer(user.token()))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
-                {"lines":[{"productId":1,"quantity":11}]}
-                """))
+    place(user, "short-stock", """
+        {"lines":[{"productId":1,"quantity":11}]}
+        """)
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("INSUFFICIENT_STOCK"));
 
@@ -113,12 +143,9 @@ class PlaceOrderIntegrationTest {
   void rollsBackEarlierLinesWhenALaterLineIsShort() throws Exception {
     LoggedIn user = registerAndLogin("buyer@example.com");
 
-    mockMvc.perform(post("/orders")
-            .header("Authorization", bearer(user.token()))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
-                {"lines":[{"productId":1,"quantity":1},{"productId":2,"quantity":11}]}
-                """))
+    place(user, "rollback-lines", """
+        {"lines":[{"productId":1,"quantity":1},{"productId":2,"quantity":11}]}
+        """)
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("INSUFFICIENT_STOCK"));
 
@@ -143,12 +170,9 @@ class PlaceOrderIntegrationTest {
     LoggedIn buyer = registerAndLogin("buyer@example.com");
     LoggedIn other = registerAndLogin("other@example.com");
 
-    MvcResult created = mockMvc.perform(post("/orders")
-            .header("Authorization", bearer(buyer.token()))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
-                {"lines":[{"productId":1,"quantity":1}]}
-                """))
+    MvcResult created = place(buyer, "buyer-order", """
+        {"lines":[{"productId":1,"quantity":1}]}
+        """)
         .andExpect(status().isCreated())
         .andReturn();
     int orderId = JsonPath.read(body(created), "$.id");
@@ -216,12 +240,9 @@ class PlaceOrderIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.available").value(3));
 
-    mockMvc.perform(post("/orders")
-            .header("Authorization", bearer(user.token()))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
-                {"lines":[{"productId":%d,"quantity":2}]}
-                """.formatted(productId)))
+    place(user, "inkstone-" + productId, """
+        {"lines":[{"productId":%d,"quantity":2}]}
+        """.formatted(productId))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.totalCents").value(44000))
         .andExpect(jsonPath("$.lines[0].productName").value("端砚"));
@@ -268,6 +289,105 @@ class PlaceOrderIntegrationTest {
                 """.formatted(accepted + "extra")))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+  }
+
+  @Test
+  void retriesTheSameOrderWithoutDeductingTwice() throws Exception {
+    LoggedIn user = registerAndLogin("buyer@example.com");
+    String body = """
+        {"lines":[{"productId":1,"quantity":2}]}
+        """;
+
+    MvcResult first = place(user, "same-order", body)
+        .andExpect(status().isCreated())
+        .andReturn();
+    int orderId = JsonPath.read(body(first), "$.id");
+
+    jdbcTemplate.update("delete from order_lines");
+    jdbcTemplate.update("delete from orders");
+
+    place(user, "same-order", body)
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.totalCents").value(13600));
+
+    assertThat(orderCount()).isEqualTo(1);
+    assertThat(available(1)).isEqualTo(8);
+    assertThat(orderId).isPositive();
+  }
+
+  @Test
+  void rejectsAReusedKeyWhenTheOrderContentsDiffer() throws Exception {
+    LoggedIn user = registerAndLogin("buyer@example.com");
+
+    place(user, "one-key", """
+        {"lines":[{"productId":1,"quantity":1}]}
+        """)
+        .andExpect(status().isCreated());
+
+    place(user, "one-key", """
+        {"lines":[{"productId":1,"quantity":2}]}
+        """)
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("IDEMPOTENCY_CONFLICT"));
+
+    assertThat(orderCount()).isEqualTo(1);
+    assertThat(available(1)).isEqualTo(9);
+  }
+
+  @Test
+  void rejectsAnOrderWithoutAnIdempotencyKey() throws Exception {
+    LoggedIn user = registerAndLogin("buyer@example.com");
+
+    mockMvc.perform(post("/orders")
+            .header("Authorization", bearer(user.token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {"lines":[{"productId":1,"quantity":1}]}
+                """))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+    assertThat(orderCount()).isZero();
+  }
+
+  @Test
+  void reportsAnUnknownDeductionWhenInventoryDoesNotAnswer() throws Exception {
+    LoggedIn user = registerAndLogin("buyer@example.com");
+    Thread acceptor = null;
+    try (ServerSocket socket = new ServerSocket(0)) {
+      acceptor = new Thread(() -> {
+        try (Socket ignored = socket.accept()) {
+          Thread.sleep(10_000);
+        } catch (Exception ignored) {
+          // The request times out and this socket is closed.
+        }
+      });
+      acceptor.setDaemon(true);
+      acceptor.start();
+      inventoryClient.useBaseUrl("http://127.0.0.1:" + socket.getLocalPort());
+
+      place(user, "timed-out", """
+          {"lines":[{"productId":1,"quantity":1}]}
+          """)
+          .andExpect(status().isGatewayTimeout())
+          .andExpect(jsonPath("$.code").value("STOCK_DEDUCTION_UNKNOWN"));
+    } finally {
+      inventoryClient.useBaseUrl(inventoryBaseUrl);
+      if (acceptor != null) {
+        acceptor.interrupt();
+      }
+    }
+
+    assertThat(orderCount()).isZero();
+    assertThat(available(1)).isEqualTo(10);
+  }
+
+  private ResultActions place(LoggedIn user, String idempotencyKey, String json) throws Exception {
+    return mockMvc.perform(post("/orders")
+        .header("Authorization", bearer(user.token()))
+        .header("Idempotency-Key", idempotencyKey)
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(json));
   }
 
   private LoggedIn registerAndLogin(String email) throws Exception {

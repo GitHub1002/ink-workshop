@@ -1,4 +1,4 @@
-package ink.workshop.inventory;
+package ink.inventory;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

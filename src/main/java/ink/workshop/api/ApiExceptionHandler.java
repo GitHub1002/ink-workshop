@@ -1,9 +1,12 @@
 package ink.workshop.api;
 
 import ink.workshop.catalog.ProductNotFoundException;
+import ink.workshop.inventory.IdempotencyConflictException;
 import ink.workshop.inventory.InsufficientStockException;
 import ink.workshop.inventory.InventoryNotFoundException;
+import ink.workshop.inventory.InventoryUnavailableException;
 import ink.workshop.order.DuplicateProductException;
+import ink.workshop.order.MissingIdempotencyKeyException;
 import ink.workshop.order.OrderNotFoundException;
 import ink.workshop.user.EmailAlreadyUsedException;
 import ink.workshop.user.InvalidCredentialsException;
@@ -26,6 +29,23 @@ public class ApiExceptionHandler {
   ResponseEntity<ApiError> insufficientStock(InsufficientStockException exception) {
     return ResponseEntity.status(HttpStatus.CONFLICT)
         .body(new ApiError("INSUFFICIENT_STOCK", exception.getMessage()));
+  }
+
+  @ExceptionHandler(IdempotencyConflictException.class)
+  ResponseEntity<ApiError> idempotencyConflict(IdempotencyConflictException exception) {
+    return ResponseEntity.status(HttpStatus.CONFLICT)
+        .body(new ApiError("IDEMPOTENCY_CONFLICT", exception.getMessage()));
+  }
+
+  @ExceptionHandler(InventoryUnavailableException.class)
+  ResponseEntity<ApiError> inventoryUnavailable(InventoryUnavailableException exception) {
+    return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT)
+        .body(new ApiError(exception.code(), exception.getMessage()));
+  }
+
+  @ExceptionHandler(MissingIdempotencyKeyException.class)
+  ResponseEntity<ApiError> missingIdempotencyKey(MissingIdempotencyKeyException exception) {
+    return ResponseEntity.badRequest().body(new ApiError("VALIDATION_ERROR", exception.getMessage()));
   }
 
   @ExceptionHandler(ProductNotFoundException.class)

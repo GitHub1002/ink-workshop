@@ -15,10 +15,11 @@
   <artifactId>ink-workshop</artifactId>
   <version>0.1.0</version>
   <name>ink-workshop</name>
-  <description>墨坊阶段 1：单体里的下单与扣库存</description>
+  <description>墨坊阶段 2：订单通过 HTTP 调用库存服务</description>
 
   <properties>
     <java.version>21</java.version>
+    <start-class>ink.workshop.InkWorkshopApplication</start-class>
   </properties>
 
   <dependencies>
@@ -89,7 +90,27 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <mainClass>ink.workshop.InkWorkshopApplication</mainClass>
+        </configuration>
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <id>inventory</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-maven-plugin</artifactId>
+            <configuration>
+              <mainClass>ink.inventory.InventoryApplication</mainClass>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

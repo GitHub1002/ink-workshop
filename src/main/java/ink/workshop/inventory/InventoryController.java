@@ -12,20 +12,20 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/inventory")
 public class InventoryController {
 
-  private final InventoryService inventoryService;
+  private final InventoryClient inventoryClient;
 
-  public InventoryController(InventoryService inventoryService) {
-    this.inventoryService = inventoryService;
+  public InventoryController(InventoryClient inventoryClient) {
+    this.inventoryClient = inventoryClient;
   }
 
   @GetMapping("/{productId}")
   public InventoryResponse get(@PathVariable long productId) {
-    return inventoryService.get(productId);
+    return inventoryClient.get(productId);
   }
 
   @PutMapping("/{productId}")
   public InventoryResponse setAvailable(
       @PathVariable long productId, @Valid @RequestBody SetStockRequest request) {
-    return inventoryService.setAvailable(productId, request.available());
+    return inventoryClient.setAvailable(productId, request.available());
   }
 }

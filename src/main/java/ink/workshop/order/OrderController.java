@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -26,8 +27,13 @@ public class OrderController {
   }
 
   @PostMapping
-  public ResponseEntity<OrderResponse> place(@Valid @RequestBody PlaceOrderRequest request) {
-    OrderResponse order = orderService.place(currentUser.id(), request);
+  public ResponseEntity<OrderResponse> place(
+      @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
+      @Valid @RequestBody PlaceOrderRequest request) {
+    if (idempotencyKey == null || idempotencyKey.isBlank() || idempotencyKey.length() > 80) {
+      throw new MissingIdempotencyKeyException();
+    }
+    OrderResponse order = orderService.place(currentUser.id(), idempotencyKey.trim(), request);
     return ResponseEntity.created(URI.create("/orders/" + order.id())).body(order);
   }
 

@@ -22,5 +22,21 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ink_workshop
       SPRING_DATASOURCE_USERNAME: ink
       SPRING_DATASOURCE_PASSWORD: ink
+      INK_INVENTORY_BASE_URL: http://inventory:8081
     ports:
       - "8080:8080"
+
+  inventory:
+    build: .
+    restart: on-failure
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_CONFIG_NAME: inventory
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ink_workshop
+      SPRING_DATASOURCE_USERNAME: ink
+      SPRING_DATASOURCE_PASSWORD: ink
+    ports:
+      - "8081:8081"
+    entrypoint: ["java", "-Dloader.main=ink.inventory.InventoryApplication", "-cp", "app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]

@@ -3,6 +3,7 @@ package ink.workshop.order;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface OrderRepository extends JpaRepository<Order, Long> {
@@ -10,4 +11,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
   List<Order> findAllByUserIdOrderByIdDesc(long userId);
 
   Optional<Order> findByIdAndUserId(long id, long userId);
+
+  @EntityGraph(attributePaths = "lines")
+  Optional<Order> findByUserIdAndIdempotencyKey(long userId, String idempotencyKey);
 }

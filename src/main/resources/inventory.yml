@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: ink-inventory
+  datasource:
+    url: jdbc:postgresql://localhost:5433/ink_workshop
+    username: ink
+    password: ink
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.jdbc.time_zone: UTC
+  flyway:
+    locations: classpath:db/inventory
+    table: flyway_schema_history_inventory
+    baseline-on-migrate: true
+    baseline-version: 0
+
+server:
+  port: 8081

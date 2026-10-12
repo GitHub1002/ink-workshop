@@ -1,4 +1,4 @@
-package ink.workshop.inventory;
+package ink.inventory;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;

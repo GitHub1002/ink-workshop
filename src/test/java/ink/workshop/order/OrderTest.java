@@ -14,7 +14,9 @@ class OrderTest {
     Order order = Order.place(7L, List.of(
         new LineSnapshot(1, "松烟墨", 6800, 2),
         new LineSnapshot(3, "宣纸", 3600, 1)),
-        Instant.parse("2026-10-10T12:00:00Z"));
+        Instant.parse("2026-10-10T12:00:00Z"),
+        "order-1",
+        "fingerprint");
 
     assertThat(order.getUserId()).isEqualTo(7L);
     assertThat(order.getStatus()).isEqualTo(OrderStatus.CREATED);

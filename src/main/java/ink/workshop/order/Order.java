@@ -36,16 +36,29 @@ public class Order {
   @Column(name = "user_id", nullable = false)
   private long userId;
 
+  @Column(name = "idempotency_key", length = 80)
+  private String idempotencyKey;
+
+  @Column(name = "line_fingerprint", length = 64)
+  private String lineFingerprint;
+
   @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
   private List<OrderLine> lines = new ArrayList<>();
 
   protected Order() {}
 
-  public static Order place(long userId, List<LineSnapshot> snapshots, Instant createdAt) {
+  public static Order place(
+      long userId,
+      List<LineSnapshot> snapshots,
+      Instant createdAt,
+      String idempotencyKey,
+      String lineFingerprint) {
     Order order = new Order();
     order.userId = userId;
     order.status = OrderStatus.CREATED;
     order.createdAt = createdAt;
+    order.idempotencyKey = idempotencyKey;
+    order.lineFingerprint = lineFingerprint;
     int total = 0;
     for (LineSnapshot snapshot : snapshots) {
       int lineTotal = Math.multiplyExact(snapshot.unitPriceCents(), snapshot.quantity());
@@ -74,6 +87,10 @@ public class Order {
 
   public long getUserId() {
     return userId;
+  }
+
+  public String getLineFingerprint() {
+    return lineFingerprint;
   }
 
   public List<OrderLine> getLines() {
