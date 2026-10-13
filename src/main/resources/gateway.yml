@@ -19,22 +19,67 @@ spring:
               uri: lb://ink-workshop
               predicates:
                 - Path=/users/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    id: shop
+                    fallbackUri: forward:/fallback/shop
             - id: sessions
               uri: lb://ink-workshop
               predicates:
                 - Path=/sessions/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    id: shop
+                    fallbackUri: forward:/fallback/shop
             - id: orders
               uri: lb://ink-workshop
               predicates:
                 - Path=/orders/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    id: shop
+                    fallbackUri: forward:/fallback/shop
             - id: products
               uri: lb://ink-workshop
               predicates:
                 - Path=/products/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    id: shop
+                    fallbackUri: forward:/fallback/shop
             - id: inventory
               uri: lb://ink-workshop
               predicates:
                 - Path=/inventory/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    id: shop
+                    fallbackUri: forward:/fallback/shop
+
+resilience4j:
+  timelimiter:
+    instances:
+      shop:
+        timeout-duration: 5s
+  circuitbreaker:
+    instances:
+      shop:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 80
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 2
+
+ink:
+  gateway:
+    rate-limit:
+      permits: 20
+      period: 1s
 
 server:
   port: 8080
