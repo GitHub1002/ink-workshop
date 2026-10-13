@@ -2,7 +2,9 @@ spring:
   application:
     name: ink-workshop
   config:
-    import: optional:classpath:observability.yml
+    import:
+      - optional:classpath:observability.yml
+      - optional:nacos:${spring.application.name}.yaml
   autoconfigure:
     exclude:
       - org.springframework.cloud.gateway.server.mvc.GatewayServerMvcAutoConfiguration
@@ -14,6 +16,12 @@ spring:
       - org.springframework.cloud.gateway.server.mvc.config.DefaultFunctionConfiguration
   cloud:
     nacos:
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+      config:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        file-extension: yaml
+        refresh-enabled: true
       discovery:
         server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
         ip: ${INK_ADVERTISE_HOST:127.0.0.1}

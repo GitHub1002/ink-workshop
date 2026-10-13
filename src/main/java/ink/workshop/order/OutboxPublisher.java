@@ -53,14 +53,22 @@ public class OutboxPublisher {
       }
       rabbitTemplate.send(
           StockTopology.EXCHANGE,
-          StockTopology.DEDUCT_KEY,
+          routingKey(claimed.eventType()),
           MessageBuilder.withBody(claimed.payload().getBytes(StandardCharsets.UTF_8))
               .setContentType(MessageProperties.CONTENT_TYPE_JSON)
               .setMessageId(Long.toString(claimed.id()))
               .build());
       transactions.executeWithoutResult(status -> outboxRepository.findById(claimed.id())
           .ifPresent(row -> row.markPublished(clock.instant())));
-      log.info("outbox_published id={} port={}", claimed.id(), port);
+      log.info("outbox_published id={} port={} type={}", claimed.id(), port, claimed.eventType());
     }
+  }
+
+  private static String routingKey(String eventType) {
+    return switch (eventType) {
+      case "STOCK_DEDUCTION_REQUESTED" -> StockTopology.DEDUCT_KEY;
+      case "STOCK_RELEASE_REQUESTED" -> StockTopology.RELEASE_KEY;
+      default -> throw new IllegalStateException("发件箱里有未识别的事件: " + eventType);
+    };
   }
 }

@@ -11,7 +11,11 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import io.github.resilience4j.ratelimiter.RateLimiter;
 import io.github.resilience4j.ratelimiter.RateLimiterConfig;
-import org.springframework.beans.factory.annotation.Value;
+import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.cloud.context.environment.EnvironmentChangeEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
@@ -22,19 +26,28 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public class ShopRateLimitFilter extends OncePerRequestFilter {
 
+  private static final Logger log = LoggerFactory.getLogger(ShopRateLimitFilter.class);
   private static final Set<String> SHOP_PREFIXES = Set.of(
       "/users", "/sessions", "/orders", "/products", "/inventory");
 
-  private final RateLimiter limiter;
+  private final GatewayRateLimitProperties properties;
+  private final RateLimiterRegistry registry = RateLimiterRegistry.ofDefaults();
+  private volatile RateLimiter limiter;
 
-  public ShopRateLimitFilter(
-      @Value("${ink.gateway.rate-limit.permits:20}") int permits,
-      @Value("${ink.gateway.rate-limit.period:1s}") Duration period) {
-    this.limiter = RateLimiter.of("shop", RateLimiterConfig.custom()
-        .limitForPeriod(permits)
-        .limitRefreshPeriod(period)
-        .timeoutDuration(Duration.ZERO)
-        .build());
+  public ShopRateLimitFilter(GatewayRateLimitProperties properties) {
+    this.properties = properties;
+    this.limiter = createLimiter();
+  }
+
+  @EventListener
+  public void refresh(EnvironmentChangeEvent event) {
+    boolean relevant = event.getKeys().stream().anyMatch(key -> key.startsWith("ink.gateway.rate-limit"));
+    if (!relevant) {
+      return;
+    }
+    registry.remove("shop");
+    this.limiter = createLimiter();
+    log.info("rate_limit_updated permits={} period={}", properties.getPermits(), properties.getPeriod());
   }
 
   @Override
@@ -59,5 +72,13 @@ public class ShopRateLimitFilter extends OncePerRequestFilter {
     response.setContentType(MediaType.APPLICATION_JSON_VALUE);
     response.setCharacterEncoding(StandardCharsets.UTF_8.name());
     response.getWriter().write("{\"code\":\"RATE_LIMITED\",\"message\":\"请求过于频繁，请稍后再试\"}");
+  }
+
+  private RateLimiter createLimiter() {
+    return registry.rateLimiter("shop", RateLimiterConfig.custom()
+        .limitForPeriod(properties.getPermits())
+        .limitRefreshPeriod(properties.getPeriod())
+        .timeoutDuration(Duration.ZERO)
+        .build());
   }
 }

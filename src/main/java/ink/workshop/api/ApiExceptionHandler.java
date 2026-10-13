@@ -9,6 +9,7 @@ import ink.workshop.inventory.InventoryUnavailableException;
 import ink.workshop.order.DuplicateProductException;
 import ink.workshop.order.MissingIdempotencyKeyException;
 import ink.workshop.order.OrderNotFoundException;
+import ink.workshop.order.OrderNotPayableException;
 import ink.workshop.user.EmailAlreadyUsedException;
 import ink.workshop.user.InvalidCredentialsException;
 import ink.workshop.user.PasswordConstraintException;
@@ -65,6 +66,12 @@ public class ApiExceptionHandler {
   ResponseEntity<ApiError> missingInventory(InventoryNotFoundException exception) {
     return ResponseEntity.status(HttpStatus.NOT_FOUND)
         .body(new ApiError("INVENTORY_NOT_FOUND", exception.getMessage()));
+  }
+
+  @ExceptionHandler(OrderNotPayableException.class)
+  ResponseEntity<ApiError> orderNotPayable(OrderNotPayableException exception) {
+    return ResponseEntity.status(HttpStatus.CONFLICT)
+        .body(new ApiError("ORDER_NOT_PAYABLE", exception.getMessage()));
   }
 
   @ExceptionHandler(OrderNotFoundException.class)

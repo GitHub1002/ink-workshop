@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @SpringBootTest(properties = {
     "spring.config.name=gateway",
     "spring.cloud.nacos.discovery.enabled=false",
+    "spring.cloud.nacos.config.enabled=false",
     "ink.gateway.rate-limit.permits=100",
     "resilience4j.circuitbreaker.instances.shop.sliding-window-size=4",
     "resilience4j.circuitbreaker.instances.shop.minimum-number-of-calls=3",

@@ -15,4 +15,12 @@ public interface InventoryRepository extends JpaRepository<Inventory, Long> {
         and inventory.available >= :quantity
       """)
   int deductIfEnough(@Param("productId") long productId, @Param("quantity") int quantity);
+
+  @Modifying(clearAutomatically = true, flushAutomatically = true)
+  @Query("""
+      update Inventory inventory
+      set inventory.available = inventory.available + :quantity
+      where inventory.productId = :productId
+      """)
+  int addAvailable(@Param("productId") long productId, @Param("quantity") int quantity);
 }

@@ -1,0 +1,3 @@
+ink:
+  outbox:
+    delay: 1000

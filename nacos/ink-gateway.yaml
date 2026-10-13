@@ -1,0 +1,5 @@
+ink:
+  gateway:
+    rate-limit:
+      permits: 20
+      period: 1s

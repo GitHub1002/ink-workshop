@@ -41,8 +41,8 @@ public class OutboxClaims {
       return null;
     }
     row.claim(now);
-    return new Claimed(row.getId(), row.getPayload());
+    return new Claimed(row.getId(), row.getEventType(), row.getPayload());
   }
 
-  public record Claimed(long id, String payload) {}
+  public record Claimed(long id, String eventType, String payload) {}
 }

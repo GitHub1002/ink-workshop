@@ -2,9 +2,17 @@ spring:
   application:
     name: ink-gateway
   config:
-    import: optional:classpath:observability.yml
+    import:
+      - optional:classpath:observability.yml
+      - optional:nacos:${spring.application.name}.yaml
   cloud:
     nacos:
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+      config:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        file-extension: yaml
+        refresh-enabled: true
       discovery:
         server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
         register-enabled: false

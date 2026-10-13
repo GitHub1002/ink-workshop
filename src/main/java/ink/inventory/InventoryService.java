@@ -40,6 +40,14 @@ public class InventoryService {
   }
 
   @Transactional
+  public void restore(long productId, int quantity) {
+    int updated = inventoryRepository.addAvailable(productId, quantity);
+    if (updated != 1) {
+      throw new IllegalStateException("没有这块库存: " + productId);
+    }
+  }
+
+  @Transactional
   public void deduct(long productId, String productName, int quantity) {
     Inventory inventory = inventoryRepository.findById(productId)
         .orElseThrow(() -> new InsufficientStockException(productName, quantity, 0));

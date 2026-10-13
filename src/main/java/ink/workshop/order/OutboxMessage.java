@@ -44,6 +44,10 @@ public class OutboxMessage {
     return id;
   }
 
+  public String getEventType() {
+    return eventType;
+  }
+
   public String getPayload() {
     return payload;
   }

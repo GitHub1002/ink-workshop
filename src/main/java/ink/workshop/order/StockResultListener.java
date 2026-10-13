@@ -21,6 +21,10 @@ public class StockResultListener {
   @RabbitListener(queues = StockTopology.RESULT_QUEUE)
   public void onResult(Message message) {
     StockDeductionResult result = jsonMapper.readValue(message.getBody(), StockDeductionResult.class);
+    if ("RELEASED".equals(result.status())) {
+      orderService.applyReleaseResult(result.orderId());
+      return;
+    }
     orderService.applyStockResult(result);
   }
 }

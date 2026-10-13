@@ -1,0 +1,237 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog
+  namespace: ink-workshop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: catalog
+  template:
+    metadata:
+      labels:
+        app: catalog
+    spec:
+      containers:
+        - name: catalog
+          image: ink-workshop:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8082
+          env:
+            - name: SPRING_CONFIG_NAME
+              value: catalog
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:postgresql://postgres:5432/ink_catalog
+            - name: SPRING_DATASOURCE_USERNAME
+              value: ink
+            - name: SPRING_DATASOURCE_PASSWORD
+              value: ink
+            - name: NACOS_SERVER_ADDR
+              value: nacos:8848
+            - name: NACOS_USERNAME
+              value: nacos
+            - name: NACOS_PASSWORD
+              value: nacos
+            - name: MANAGEMENT_TRACING_EXPORT_ZIPKIN_ENDPOINT
+              value: http://zipkin:9411/api/v2/spans
+          command:
+            - java
+            - -Dloader.main=ink.catalog.CatalogApplication
+            - -cp
+            - app.jar
+            - org.springframework.boot.loader.launch.PropertiesLauncher
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog
+  namespace: ink-workshop
+spec:
+  selector:
+    app: catalog
+  ports:
+    - port: 8082
+      targetPort: 8082
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory
+  namespace: ink-workshop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inventory
+  template:
+    metadata:
+      labels:
+        app: inventory
+    spec:
+      containers:
+        - name: inventory
+          image: ink-workshop:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8081
+          env:
+            - name: SPRING_CONFIG_NAME
+              value: inventory
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:postgresql://postgres:5432/ink_inventory
+            - name: SPRING_DATASOURCE_USERNAME
+              value: ink
+            - name: SPRING_DATASOURCE_PASSWORD
+              value: ink
+            - name: SPRING_RABBITMQ_HOST
+              value: rabbitmq
+            - name: SPRING_RABBITMQ_USERNAME
+              value: ink
+            - name: SPRING_RABBITMQ_PASSWORD
+              value: ink
+            - name: NACOS_SERVER_ADDR
+              value: nacos:8848
+            - name: NACOS_USERNAME
+              value: nacos
+            - name: NACOS_PASSWORD
+              value: nacos
+            - name: MANAGEMENT_TRACING_EXPORT_ZIPKIN_ENDPOINT
+              value: http://zipkin:9411/api/v2/spans
+          command:
+            - java
+            - -Dloader.main=ink.inventory.InventoryApplication
+            - -cp
+            - app.jar
+            - org.springframework.boot.loader.launch.PropertiesLauncher
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory
+  namespace: ink-workshop
+spec:
+  selector:
+    app: inventory
+  ports:
+    - port: 8081
+      targetPort: 8081
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shop
+  namespace: ink-workshop
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: shop
+  template:
+    metadata:
+      labels:
+        app: shop
+    spec:
+      containers:
+        - name: shop
+          image: ink-workshop:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8083
+          env:
+            - name: SERVER_PORT
+              value: "8083"
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:postgresql://postgres:5432/ink_order
+            - name: SPRING_DATASOURCE_USERNAME
+              value: ink
+            - name: SPRING_DATASOURCE_PASSWORD
+              value: ink
+            - name: SPRING_RABBITMQ_HOST
+              value: rabbitmq
+            - name: SPRING_RABBITMQ_USERNAME
+              value: ink
+            - name: SPRING_RABBITMQ_PASSWORD
+              value: ink
+            - name: INK_CATALOG_BASE_URL
+              value: http://catalog:8082
+            - name: INK_INVENTORY_BASE_URL
+              value: http://inventory:8081
+            - name: NACOS_SERVER_ADDR
+              value: nacos:8848
+            - name: NACOS_USERNAME
+              value: nacos
+            - name: NACOS_PASSWORD
+              value: nacos
+            - name: INK_ADVERTISE_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: MANAGEMENT_TRACING_EXPORT_ZIPKIN_ENDPOINT
+              value: http://zipkin:9411/api/v2/spans
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shop
+  namespace: ink-workshop
+spec:
+  selector:
+    app: shop
+  ports:
+    - port: 8083
+      targetPort: 8083
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: ink-workshop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      containers:
+        - name: gateway
+          image: ink-workshop:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SPRING_CONFIG_NAME
+              value: gateway
+            - name: NACOS_SERVER_ADDR
+              value: nacos:8848
+            - name: NACOS_USERNAME
+              value: nacos
+            - name: NACOS_PASSWORD
+              value: nacos
+            - name: MANAGEMENT_TRACING_EXPORT_ZIPKIN_ENDPOINT
+              value: http://zipkin:9411/api/v2/spans
+          command:
+            - java
+            - -Dloader.main=ink.gateway.GatewayApplication
+            - -cp
+            - app.jar
+            - org.springframework.boot.loader.launch.PropertiesLauncher
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: ink-workshop
+spec:
+  type: NodePort
+  selector:
+    app: gateway
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30080

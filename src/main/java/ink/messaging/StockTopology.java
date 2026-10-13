@@ -17,7 +17,10 @@ public class StockTopology {
   public static final String RESULT_QUEUE = "ink.stock.result";
   public static final String DEDUCT_DLQ = "ink.stock.deduct.dlq";
   public static final String RESULT_DLQ = "ink.stock.result.dlq";
+  public static final String RELEASE_QUEUE = "ink.stock.release";
+  public static final String RELEASE_DLQ = "ink.stock.release.dlq";
   public static final String DEDUCT_KEY = "deduct";
+  public static final String RELEASE_KEY = "release";
   public static final String RESULT_KEY = "result";
 
   @Bean
@@ -39,6 +42,14 @@ public class StockTopology {
   }
 
   @Bean
+  Queue releaseQueue() {
+    return QueueBuilder.durable(RELEASE_QUEUE)
+        .deadLetterExchange(DEAD_LETTER_EXCHANGE)
+        .deadLetterRoutingKey(RELEASE_KEY)
+        .build();
+  }
+
+  @Bean
   Queue resultQueue() {
     return QueueBuilder.durable(RESULT_QUEUE)
         .deadLetterExchange(DEAD_LETTER_EXCHANGE)
@@ -52,6 +63,11 @@ public class StockTopology {
   }
 
   @Bean
+  Queue releaseDeadLetterQueue() {
+    return QueueBuilder.durable(RELEASE_DLQ).build();
+  }
+
+  @Bean
   Queue resultDeadLetterQueue() {
     return QueueBuilder.durable(RESULT_DLQ).build();
   }
@@ -62,6 +78,11 @@ public class StockTopology {
   }
 
   @Bean
+  Binding releaseBinding() {
+    return BindingBuilder.bind(releaseQueue()).to(stockExchange()).with(RELEASE_KEY);
+  }
+
+  @Bean
   Binding resultBinding() {
     return BindingBuilder.bind(resultQueue()).to(stockExchange()).with(RESULT_KEY);
   }
@@ -69,6 +90,11 @@ public class StockTopology {
   @Bean
   Binding deductDeadLetterBinding() {
     return BindingBuilder.bind(deductDeadLetterQueue()).to(deadLetterExchange()).with(DEDUCT_KEY);
+  }
+
+  @Bean
+  Binding releaseDeadLetterBinding() {
+    return BindingBuilder.bind(releaseDeadLetterQueue()).to(deadLetterExchange()).with(RELEASE_KEY);
   }
 
   @Bean

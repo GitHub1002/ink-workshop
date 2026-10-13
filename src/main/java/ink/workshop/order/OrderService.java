@@ -9,9 +9,12 @@ import java.util.Set;
 
 import ink.messaging.StockDeductionRequested;
 import ink.messaging.StockDeductionResult;
+import ink.messaging.StockReleaseRequested;
 import ink.workshop.catalog.CatalogService;
 import ink.workshop.catalog.ProductResponse;
 import ink.workshop.inventory.IdempotencyConflictException;
+import ink.workshop.user.User;
+import ink.workshop.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -27,6 +30,7 @@ public class OrderService {
 
   private final CatalogService catalogService;
   private final OrderRepository orderRepository;
+  private final UserRepository userRepository;
   private final OutboxRepository outboxRepository;
   private final TransactionTemplate transactions;
   private final JsonMapper jsonMapper;
@@ -35,12 +39,14 @@ public class OrderService {
   public OrderService(
       CatalogService catalogService,
       OrderRepository orderRepository,
+      UserRepository userRepository,
       OutboxRepository outboxRepository,
       TransactionTemplate transactions,
       JsonMapper jsonMapper,
       Clock clock) {
     this.catalogService = catalogService;
     this.orderRepository = orderRepository;
+    this.userRepository = userRepository;
     this.outboxRepository = outboxRepository;
     this.transactions = transactions;
     this.jsonMapper = jsonMapper;
@@ -72,6 +78,44 @@ public class OrderService {
     OrderStatus target = OrderStatus.valueOf(result.status());
     if (order.applyStockResult(target)) {
       log.info("order_stock_result id={} status={}", order.getId(), target);
+    }
+  }
+
+  @Transactional
+  public PayResult pay(long userId, long orderId, String idempotencyKey) {
+    Order order = orderRepository.lockByIdAndUserId(orderId, userId)
+        .orElseThrow(() -> new OrderNotFoundException(orderId));
+    if (idempotencyKey.equals(order.getPaymentKey())) {
+      return new PayResult(OrderResponse.from(order), order.getStatus() == OrderStatus.RELEASING);
+    }
+    if (order.getStatus() != OrderStatus.RESERVED) {
+      throw new OrderNotPayableException();
+    }
+    User user = userRepository.lockById(userId)
+        .orElseThrow(() -> new OrderNotFoundException(orderId));
+    if (user.debit(order.getTotalCents())) {
+      order.markPaid(idempotencyKey);
+      log.info("order_paid id={} totalCents={}", order.getId(), order.getTotalCents());
+      return new PayResult(OrderResponse.from(order), false);
+    }
+    order.markReleasing(idempotencyKey);
+    List<StockReleaseRequested.Line> lines = order.getLines().stream()
+        .map(line -> new StockReleaseRequested.Line(line.getProductId(), line.getProductName(), line.getQuantity()))
+        .toList();
+    StockReleaseRequested event = new StockReleaseRequested(
+        order.getId(), "release:" + userId + ":" + idempotencyKey, lines);
+    outboxRepository.save(new OutboxMessage(
+        "STOCK_RELEASE_REQUESTED", jsonMapper.writeValueAsString(event), clock.instant()));
+    log.info("payment_declined id={} totalCents={}", order.getId(), order.getTotalCents());
+    return new PayResult(OrderResponse.from(order), true);
+  }
+
+  @Transactional
+  public void applyReleaseResult(long orderId) {
+    Order order = orderRepository.findById(orderId)
+        .orElseThrow(() -> new IllegalStateException("订单 " + orderId + " 还不存在"));
+    if (order.markCancelled()) {
+      log.info("order_stock_released id={}", orderId);
     }
   }
 

@@ -42,6 +42,9 @@ public class Order {
   @Column(name = "line_fingerprint", length = 64)
   private String lineFingerprint;
 
+  @Column(name = "payment_key", length = 80)
+  private String paymentKey;
+
   @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
   private List<OrderLine> lines = new ArrayList<>();
 
@@ -85,6 +88,28 @@ public class Order {
       throw new IllegalArgumentException(target.name());
     }
     status = target;
+    return true;
+  }
+
+  public String getPaymentKey() {
+    return paymentKey;
+  }
+
+  public void markPaid(String paymentKey) {
+    this.paymentKey = paymentKey;
+    this.status = OrderStatus.PAID;
+  }
+
+  public void markReleasing(String paymentKey) {
+    this.paymentKey = paymentKey;
+    this.status = OrderStatus.RELEASING;
+  }
+
+  public boolean markCancelled() {
+    if (status != OrderStatus.RELEASING) {
+      return false;
+    }
+    status = OrderStatus.CANCELLED;
     return true;
   }
 

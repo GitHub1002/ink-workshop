@@ -72,6 +72,7 @@ class PlaceOrderIntegrationTest {
     registry.add("spring.rabbitmq.password", rabbit::getAdminPassword);
     registry.add("ink.outbox.delay", () -> "200");
     registry.add("spring.cloud.nacos.discovery.enabled", () -> "false");
+    registry.add("spring.cloud.nacos.config.enabled", () -> "false");
     registry.add("spring.rabbitmq.listener.simple.retry.initial-interval", () -> "50ms");
   }
 
@@ -131,6 +132,7 @@ class PlaceOrderIntegrationTest {
     jdbcTemplate.update("delete from users");
     inventoryJdbc.update("delete from outbox");
     inventoryJdbc.update("delete from stock_deductions");
+    inventoryJdbc.update("delete from stock_releases");
     inventoryJdbc.update("delete from inventory where product_id > 4");
     inventoryJdbc.update("update inventory set available = 10");
     catalogJdbc.update("delete from products where id > 4");
@@ -183,6 +185,55 @@ class PlaceOrderIntegrationTest {
         .andExpect(jsonPath("$.available").value(8));
 
     assertThat(orderCount()).isEqualTo(1);
+  }
+
+  @Test
+  void paysAReservedOrderFromTheBalance() throws Exception {
+    LoggedIn user = registerAndLogin("buyer@example.com");
+    long orderId = placeAndAwait(user, "pay-order", """
+        {"lines":[{"productId":1,"quantity":1}]}
+        """, "RESERVED");
+
+    mockMvc.perform(post("/orders/" + orderId + "/payments")
+            .header("Authorization", bearer(user.token()))
+            .header("Idempotency-Key", "pay-1"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("PAID"));
+    mockMvc.perform(post("/orders/" + orderId + "/payments")
+            .header("Authorization", bearer(user.token()))
+            .header("Idempotency-Key", "pay-1"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("PAID"));
+    mockMvc.perform(post("/orders/" + orderId + "/payments")
+            .header("Authorization", bearer(user.token()))
+            .header("Idempotency-Key", "pay-again"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("ORDER_NOT_PAYABLE"));
+
+    Integer balance = jdbcTemplate.queryForObject(
+        "select balance_cents from users where id = ?", Integer.class, user.userId());
+    assertThat(balance).isEqualTo(50_000 - 6800);
+  }
+
+  @Test
+  void returnsStockWhenTheBalanceCannotCoverTheOrder() throws Exception {
+    LoggedIn user = registerAndLogin("buyer@example.com");
+    long orderId = placeAndAwait(user, "decline-pay", """
+        {"lines":[{"productId":2,"quantity":4}]}
+        """, "RESERVED");
+    assertThat(available(2)).isEqualTo(6);
+
+    mockMvc.perform(post("/orders/" + orderId + "/payments")
+            .header("Authorization", bearer(user.token()))
+            .header("Idempotency-Key", "pay-decline"))
+        .andExpect(status().isAccepted())
+        .andExpect(jsonPath("$.status").value("RELEASING"));
+
+    awaitStatus(user, orderId, "CANCELLED");
+    assertThat(available(2)).isEqualTo(10);
+    Integer balance = jdbcTemplate.queryForObject(
+        "select balance_cents from users where id = ?", Integer.class, user.userId());
+    assertThat(balance).isEqualTo(50_000);
   }
 
   @Test
@@ -604,7 +655,8 @@ class PlaceOrderIntegrationTest {
         "--server.port=0",
         "--spring.datasource.url=" + databaseUrl(database),
         "--spring.datasource.username=" + postgres.getUsername(),
-        "--spring.datasource.password=" + postgres.getPassword());
+        "--spring.datasource.password=" + postgres.getPassword(),
+        "--spring.cloud.nacos.config.enabled=false");
   }
 
   private ConfigurableApplicationContext startInventory() {
@@ -618,7 +670,8 @@ class PlaceOrderIntegrationTest {
         "--spring.rabbitmq.username=" + rabbit.getAdminUsername(),
         "--spring.rabbitmq.password=" + rabbit.getAdminPassword(),
         "--ink.outbox.delay=200",
-        "--spring.rabbitmq.listener.simple.retry.initial-interval=50ms");
+        "--spring.rabbitmq.listener.simple.retry.initial-interval=50ms",
+        "--spring.cloud.nacos.config.enabled=false");
   }
 
   private String databaseUrl(String database) {

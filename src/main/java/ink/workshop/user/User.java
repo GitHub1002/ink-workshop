@@ -29,6 +29,9 @@ public class User {
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
 
+  @Column(name = "balance_cents", nullable = false)
+  private int balanceCents;
+
   protected User() {}
 
   public static User register(String email, String passwordHash, String name, Instant createdAt) {
@@ -37,7 +40,16 @@ public class User {
     user.passwordHash = passwordHash;
     user.name = name;
     user.createdAt = createdAt;
+    user.balanceCents = 50_000;
     return user;
+  }
+
+  public boolean debit(int cents) {
+    if (cents < 0 || balanceCents < cents) {
+      return false;
+    }
+    balanceCents -= cents;
+    return true;
   }
 
   public Long getId() {
@@ -54,5 +66,9 @@ public class User {
 
   public String getName() {
     return name;
+  }
+
+  public int getBalanceCents() {
+    return balanceCents;
   }
 }

@@ -41,6 +41,20 @@ public class OrderController {
     return ResponseEntity.ok().location(location).body(result.order());
   }
 
+  @PostMapping("/{id}/payments")
+  public ResponseEntity<OrderResponse> pay(
+      @PathVariable long id,
+      @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey) {
+    if (idempotencyKey == null || idempotencyKey.isBlank() || idempotencyKey.length() > 80) {
+      throw new MissingIdempotencyKeyException();
+    }
+    PayResult result = orderService.pay(currentUser.id(), id, idempotencyKey.trim());
+    if (result.compensating()) {
+      return ResponseEntity.accepted().body(result.order());
+    }
+    return ResponseEntity.ok(result.order());
+  }
+
   @GetMapping
   public List<OrderResponse> list() {
     return orderService.list(currentUser.id());
