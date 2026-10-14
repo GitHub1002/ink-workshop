@@ -1,6 +1,7 @@
 package ink.gateway;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -26,6 +27,13 @@ class GatewayApplicationTest {
     mockMvc.perform(get("/actuator/health"))
         .andExpect(status().isOk())
         .andExpect(header().exists("X-Request-Id"));
+  }
+
+  @Test
+  void allowsTheShopPageToCallTheGateway() throws Exception {
+    mockMvc.perform(options("/products").header("Origin", "http://localhost:5173"))
+        .andExpect(status().isNoContent())
+        .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"));
   }
 
   @Test
